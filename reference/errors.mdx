@@ -1,0 +1,128 @@
+---
+title: "LandScout API error codes and responses"
+sidebarTitle: "Errors"
+description: "Every LandScout API error follows a consistent JSON shape. Full error code catalog, standard response structure, and remediation steps for each code."
+keywords: ["errors", "error codes", "429", "401", "403", "422", "500", "502", "troubleshooting"]
+---
+
+Every error from the LandScout API follows a consistent JSON structure with a stable `error.code` string you can programmatically switch on. HTTP status codes alone are not enough to distinguish all failure modes — for example, both `rate_limit_exceeded` and `quota_exceeded` return `429`, but only one is retriable. Always read `error.code` and `error.retriable` from the response body.
+
+## Standard error response shape
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Monthly quota exhausted. Upgrade your plan or wait for the billing period to reset.",
+    "request_id": "req_01HY2Z...",
+    "retriable": false,
+    "docs_url": "https://docs.landscout.io/reference/errors#quota_exceeded"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `code` | string | Stable machine-readable error identifier. Use this in your switch logic. |
+| `message` | string | Human-readable explanation with remediation guidance. |
+| `request_id` | string | Unique ID for this request. Matches the `X-Request-Id` response header. |
+| `retriable` | boolean | `true` if retrying the same request may succeed. |
+| `docs_url` | string | Direct link to the relevant section of this page. |
+
+<Tip>
+Log the `X-Request-Id` response header on every API call — it always matches `error.request_id`. You must provide this value when opening a support ticket; without it, we cannot look up your request.
+</Tip>
+
+## Error catalog
+
+| Code | HTTP status | Retriable | Meaning and remediation |
+|------|-------------|-----------|------------------------|
+| `unauthorized` | 401 | No | Your API key is missing, malformed, or has been revoked. Check that your `Authorization` header uses the format `Bearer ls_live_...` and that the key has not been revoked in the dashboard. |
+| `forbidden` | 403 | No | Your account is suspended, canceled, or has a past-due invoice. Check your billing status in the dashboard. |
+| `email_not_verified` | 403 | No | Your account email has not been verified. Complete email verification before making API calls. |
+| `not_found` | 404 | No | The requested resource does not exist, or it belongs to a different account. Verify the resource ID and confirm you are using the correct API key. |
+| `validation_failed` | 422 | No | Your request body is invalid. Check `error.fields` in the response for details on which fields failed and why. |
+| `rate_limit_exceeded` | 429 | Yes | You are sending too many requests per second for your tier. Read the `Retry-After` header and wait before retrying. See the [rate limits reference](/reference/rate-limits). |
+| `quota_exceeded` | 429 | No | Your monthly report quota is exhausted. Upgrade your plan or wait for your billing period to reset. |
+| `idempotency_conflict` | 409 | No | You reused an `Idempotency-Key` with a different request body. Each unique operation must use a unique key. |
+| `upstream_error` | 502 | Yes | A downstream dependency (AI provider, data API) returned an error. Retry after a short delay using exponential backoff. |
+| `internal_error` | 500 | No | An unexpected error occurred on our end. Contact support with the `X-Request-Id` value from the response headers. |
+
+## Handling retriable errors
+
+For `rate_limit_exceeded` (429) and `upstream_error` (502), retrying with exponential backoff is the correct strategy. For all other codes, fix the underlying issue before retrying.
+
+<CodeGroup>
+
+```javascript retry.js
+async function requestWithRetry(url, options, maxRetries = 5) {
+  const RETRIABLE_CODES = new Set(["rate_limit_exceeded", "upstream_error"]);
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    const response = await fetch(url, options);
+
+    if (response.ok) return response;
+
+    const body = await response.json();
+    const { code, retriable } = body.error ?? {};
+
+    if (!retriable || !RETRIABLE_CODES.has(code)) {
+      // Non-retriable error — surface it immediately
+      throw Object.assign(new Error(body.error?.message), { code, response });
+    }
+
+    const retryAfter = parseInt(response.headers.get("Retry-After") ?? "1", 10);
+    const jitter = Math.random() * 500;
+    const delay = retryAfter * 1000 * Math.pow(2, attempt) + jitter;
+
+    console.warn(`${code} — retrying in ${Math.round(delay)}ms (attempt ${attempt + 1})`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    attempt++;
+  }
+
+  throw new Error("Max retries exceeded");
+}
+```
+
+```python retry.py
+import time
+import random
+import requests
+
+RETRIABLE_CODES = {"rate_limit_exceeded", "upstream_error"}
+
+def request_with_retry(url: str, **kwargs) -> requests.Response:
+    max_retries = kwargs.pop("max_retries", 5)
+    attempt = 0
+
+    while attempt < max_retries:
+        response = requests.request(url=url, **kwargs)
+
+        if response.ok:
+            return response
+
+        body = response.json()
+        error = body.get("error", {})
+        code = error.get("code")
+        retriable = error.get("retriable", False)
+
+        if not retriable or code not in RETRIABLE_CODES:
+            raise ValueError(f"[{code}] {error.get('message')} (request_id: {error.get('request_id')})")
+
+        retry_after = int(response.headers.get("Retry-After", 1))
+        jitter = random.uniform(0, 0.5)
+        delay = retry_after * (2 ** attempt) + jitter
+
+        print(f"{code} — retrying in {delay:.2f}s (attempt {attempt + 1})")
+        time.sleep(delay)
+        attempt += 1
+
+    raise RuntimeError("Max retries exceeded")
+```
+
+</CodeGroup>
+
+<Warning>
+Never retry `quota_exceeded` automatically. Your quota is exhausted for the billing period — sending more requests burns your retry budget and will not produce a successful response. Check `GET /v1/usage` to confirm remaining quota before retrying after a plan upgrade.
+</Warning>

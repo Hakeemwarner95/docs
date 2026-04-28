@@ -1,0 +1,106 @@
+---
+title: "Quotas, billing periods, and overages in LandScout"
+sidebarTitle: "Quota & Billing"
+description: "Learn how LandScout counts report usage, when your quota resets, what happens when you exceed your plan, and how to monitor your remaining balance."
+keywords: ["quota", "billing", "overage", "reports", "usage", "pricing", "tiers", "rate limit", "Developer", "Starter"]
+---
+
+LandScout measures usage in reports. Each plan includes a monthly report quota that resets with your billing period. Understanding how reports are counted — and what happens when you exceed your quota — helps you choose the right plan and avoid unexpected charges or interruptions.
+
+## What consumes quota
+
+| Request | Quota cost |
+|---------|-----------|
+| `POST /v1/analyze` | 1 report |
+| `POST /v1/batch` (N properties) | N reports |
+| `GET /v1/reports/{id}` | Free |
+| `GET /v1/reports/{id}/pdf` | Free |
+| `GET /v1/states/{code}` | Free |
+| `GET /v1/usage` | Free |
+| `GET /v1/health` | Free |
+
+### Batch requests are atomic
+
+`POST /v1/batch` checks your remaining quota before creating any reports. If you have 8 reports remaining and submit a batch of 10, the entire batch is rejected — no reports are created and your quota is unchanged. Resize the batch to fit within your available quota, or upgrade your plan, before resubmitting.
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Insufficient quota for this batch. Requested 10, available 8.",
+    "retriable": false,
+    "docs_url": "https://docs.landscout.io/concepts/quota-and-billing"
+  }
+}
+```
+
+## Monitoring your quota
+
+LandScout includes quota information in the response headers of every authenticated request:
+
+| Header | Description |
+|--------|-------------|
+| `X-Quota-Limit` | Total reports in your current billing period |
+| `X-Quota-Remaining` | Reports remaining before overage or block |
+
+To query your usage programmatically at any time, call `GET /v1/usage`:
+
+```bash
+curl https://api.landscout.io/v1/usage \
+  -H "Authorization: Bearer ls_live_..."
+```
+
+You can also view your current usage and quota from the dashboard under **Usage**.
+
+## Quota resets
+
+Your quota resets at the start of each billing period. Billing periods are tied to your Stripe subscription — the reset date matches your monthly renewal date, not the calendar month. Check your next reset date in the dashboard under **Billing**.
+
+## What happens when you exceed your quota
+
+The behavior at quota limit depends on your plan tier.
+
+### Developer tier — hard block
+
+When a Developer-tier account reaches its 25-report limit, further `POST /v1/analyze` and `POST /v1/batch` requests return `429 quota_exceeded`. No new reports are created until the next billing period or until you upgrade your plan.
+
+```json
+{
+  "error": {
+    "code": "quota_exceeded",
+    "message": "Monthly quota exhausted. Upgrade your plan to continue.",
+    "retriable": false,
+    "docs_url": "https://docs.landscout.io/concepts/quota-and-billing"
+  }
+}
+```
+
+### Starter tier and above — overage billing
+
+Starter, Growth, Scale, and Enterprise accounts can exceed their included quota. Each additional report beyond your plan limit is billed at the overage rate for your tier. Overage charges appear on your next invoice.
+
+## Pricing
+
+| Tier | Price/mo | Included reports | Per-report cost | Overage per report |
+|------|----------|-----------------|-----------------|-------------------|
+| Developer | $99 | 25 | $3.96 | Hard block |
+| Starter | $299 | 100 | $2.99 | $3.50 |
+| Growth | $799 | 350 | $2.28 | $3.00 |
+| Scale | $1,999 | 1,000 | $2.00 | $2.50 |
+| Enterprise | Custom | Custom | $1.50–$2.00 | Custom |
+
+<Tip>
+  Annual billing saves two months: pay for 10 months and get 12. Toggle to annual on the pricing page or in the dashboard.
+</Tip>
+
+## Free trial
+
+All plans start with a 14-day free trial. During the trial you receive 10 reports on Developer quota — no credit card required. Your trial ends automatically after 14 days or when you add a payment method and select a plan.
+
+## Managing your plan
+
+To upgrade, downgrade, or update your payment method, go to the dashboard and click **Billing → Manage billing**. This opens the Stripe customer portal where you can make changes immediately.
+
+For volume pricing above the Scale tier, contact [sales@landscout.io](mailto:sales@landscout.io) for an Enterprise quote.
+
+See the [full pricing page](/reference/pricing) for a detailed plan comparison.

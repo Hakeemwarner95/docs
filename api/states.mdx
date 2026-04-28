@@ -1,0 +1,184 @@
+---
+title: "GET /v1/states/{code} — state-level land profiles"
+sidebarTitle: "GET /v1/states/{code}"
+description: "Returns multi-mode land profile data for a US state. Free endpoint — no quota consumed. Filter by mode or retrieve all four at once."
+keywords: ["states", "state profile", "land data", "off-grid", "rural", "recreational", "investment", "free endpoint"]
+---
+
+Retrieve land suitability data for an entire US state across all four analysis modes. This is useful for quickly screening which states are worth analyzing at the property level before spending report quota. The endpoint is free — it does not consume any of your monthly quota.
+
+<Note>
+  This endpoint requires authentication but does not consume report quota. Use it freely to screen states before submitting individual property analyses.
+</Note>
+
+## Authentication
+
+Include your API key as a Bearer token in the `Authorization` header.
+
+```bash
+Authorization: Bearer ls_live_YOUR_API_KEY
+```
+
+## Request examples
+
+<CodeGroup>
+
+```bash All modes
+curl https://api.landscout.io/v1/states/NM \
+  -H "Authorization: Bearer ls_live_YOUR_API_KEY"
+```
+
+```bash Single mode
+curl "https://api.landscout.io/v1/states/NM?mode=investment" \
+  -H "Authorization: Bearer ls_live_YOUR_API_KEY"
+```
+
+</CodeGroup>
+
+## Path parameters
+
+<ParamField path="code" type="string" required>
+  Two-letter US state code (e.g., `"NM"`, `"TX"`, `"CO"`). Case-insensitive. Returns `404` for unrecognized codes.
+</ParamField>
+
+## Query parameters
+
+<ParamField query="mode" type="string">
+  Filter the response to a single analysis mode. Accepted values: `off_grid`, `rural_residential`, `recreational`, `investment`. Omit this parameter to return all four modes.
+</ParamField>
+
+## Response fields
+
+<ResponseField name="state_code" type="string" required>
+  The two-letter US state code in uppercase (e.g., `"NM"`).
+</ResponseField>
+
+<ResponseField name="modes" type="object" required>
+  Contains one key per mode returned. If you omit the `mode` query parameter, all four keys are present. If you filter to a single mode, only that key is present.
+
+  <Expandable title="mode object properties">
+    <ResponseField name="overall_score" type="number" required>
+      Overall suitability score for this mode, from 0 to 100. Higher is better.
+    </ResponseField>
+
+    <ResponseField name="sub_scores" type="object" required>
+      Per-category scores (0–100) specific to each mode. Keys vary:
+
+      - **off_grid**: `solar`, `water`, `septic`, `building_codes`, `access`
+      - **rural_residential**: `utilities`, `build_cost`, `flood_fire_risk`, `permit_complexity`, `access`
+      - **recreational**: `terrain`, `water_features`, `cover`, `neighboring_use`, `seasonal_access`
+      - **investment**: `zoning`, `comps`, `price_per_acre`, `holding_cost`, `development_potential`
+    </ResponseField>
+
+    <ResponseField name="summary" type="string" required>
+      A narrative summary of the state's suitability for this mode.
+    </ResponseField>
+
+    <ResponseField name="key_regulations" type="string[]" required>
+      A list of notable state-level regulations or policies relevant to this mode (e.g., water rights rules, zoning preemption laws).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="shared_facts" type="object" required>
+  State-wide data points that apply across all modes, such as tax rates.
+
+  <Expandable title="shared_facts properties">
+    <ResponseField name="state_income_tax" type="string">
+      State income tax rate or structure (e.g., `"4.9%"`).
+    </ResponseField>
+
+    <ResponseField name="property_tax_avg" type="string">
+      Average effective property tax rate for the state (e.g., `"0.78%"`).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Example response
+
+```json
+{
+  "state_code": "NM",
+  "modes": {
+    "off_grid": {
+      "overall_score": 82,
+      "sub_scores": {
+        "solar": 94,
+        "water": 61,
+        "septic": 74,
+        "building_codes": 88,
+        "access": 79
+      },
+      "summary": "New Mexico ranks highly for off-grid living due to exceptional solar irradiance and relatively permissive building codes in rural counties. Water access is the primary constraint — surface water is scarce and well permitting varies significantly by county.",
+      "key_regulations": [
+        "Water rights follow the prior appropriation doctrine — verify senior rights before drilling",
+        "Owner-builder exemptions available in most counties for structures under 3,000 sq ft",
+        "Composting toilets permitted statewide with a Construction Industries Division permit",
+        "No statewide zoning; rural parcels governed by county or municipality"
+      ]
+    },
+    "rural_residential": {
+      "overall_score": 74,
+      "sub_scores": {
+        "utilities": 68,
+        "build_cost": 77,
+        "flood_fire_risk": 65,
+        "permit_complexity": 81,
+        "access": 79
+      },
+      "summary": "New Mexico is a moderate choice for rural residential development. Construction costs are below the national average, and permitting complexity is low outside of Santa Fe and Albuquerque metro areas. Wildfire risk is elevated in northern forested areas.",
+      "key_regulations": [
+        "Subdivision regulations vary by county; consult the county planning department",
+        "Wildland-Urban Interface (WUI) codes apply in designated high-fire-risk areas",
+        "Septic permits issued by the New Mexico Environment Department (NMED)"
+      ]
+    },
+    "recreational": {
+      "overall_score": 79,
+      "sub_scores": {
+        "terrain": 85,
+        "water_features": 58,
+        "cover": 72,
+        "neighboring_use": 80,
+        "seasonal_access": 76
+      },
+      "summary": "New Mexico offers excellent recreational land with diverse terrain including high desert, mountains, and grasslands. Hunting is a primary draw — the state supports elk, mule deer, pronghorn, and turkey. Water features are limited compared to northern states.",
+      "key_regulations": [
+        "New Mexico Game and Fish manages hunting and fishing licenses",
+        "Trespass hunting requires written landowner permission",
+        "Public land adjacency can add significant recreational value; verify boundaries via BLM"
+      ]
+    },
+    "investment": {
+      "overall_score": 71,
+      "sub_scores": {
+        "zoning": 78,
+        "comps": 65,
+        "price_per_acre": 74,
+        "holding_cost": 82,
+        "development_potential": 68
+      },
+      "summary": "New Mexico land presents a moderate investment profile. Low property taxes and below-average price per acre keep holding costs manageable. Comparable sales data is thin in rural counties, so valuation carries more uncertainty than in higher-activity markets.",
+      "key_regulations": [
+        "Subdivision Plat Act governs parcels split into five or more lots",
+        "Water rights are separate from surface rights — verify what conveys with the parcel",
+        "Foreign ownership disclosures required for agricultural land over 10 acres (AFIDA)"
+      ]
+    }
+  },
+  "shared_facts": {
+    "state_income_tax": "4.9%",
+    "property_tax_avg": "0.78%"
+  }
+}
+```
+
+## Errors
+
+| HTTP status | Error code | Cause |
+|-------------|------------|-------|
+| `401` | `unauthorized` | Missing, malformed, or revoked API key. |
+| `403` | `forbidden` | Your account is suspended or has a past-due invoice. |
+| `404` | `not_found` | The state code is not a valid two-letter US state abbreviation. |
+
+See the [error reference](/reference/errors) for the full error response shape.

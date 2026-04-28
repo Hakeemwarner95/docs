@@ -1,0 +1,99 @@
+{
+  "projectType": "api-service",
+  "projectName": "LandScout",
+  "projectDescription": "A B2B land intelligence API that analyzes US properties across four modes (off-grid, rural residential, recreational, investment) and returns structured reports with scores, confidence ratings, citations, and a downloadable PDF.",
+  "theme": "luma",
+  "primaryColor": "#2D6A4F",
+  "lightColor": "#52B788",
+  "darkColor": "#1B4332",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/analysis-modes",
+              "concepts/report-lifecycle",
+              "concepts/quota-and-billing"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/webhooks",
+              "guides/idempotency",
+              "guides/batch-analysis",
+              "guides/mcp-server"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/rate-limits",
+              "reference/errors",
+              "reference/pricing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Reports",
+            "pages": [
+              "api/analyze",
+              "api/get-report",
+              "api/get-pdf",
+              "api/batch"
+            ]
+          },
+          {
+            "group": "Data & Usage",
+            "pages": [
+              "api/states",
+              "api/usage",
+              "api/health"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Four analysis modes: off-grid, rural residential, recreational, and investment",
+    "Async report generation with webhook delivery and polling support",
+    "Structured scores with per-category confidence ratings",
+    "Data citations from NREL, USGS, FEMA, and county regulation sources",
+    "Downloadable PDF report with signed URL",
+    "Batch analysis of up to 50 properties per request",
+    "State-level land profiles for all four modes",
+    "MCP server integration for AI agents (mcp.landscout.io)",
+    "HMAC-SHA256 signed webhook payloads",
+    "Idempotency-Key support for safe retries"
+  ],
+  "publicApiSurface": [
+    "POST /v1/analyze",
+    "GET /v1/reports/{id}",
+    "GET /v1/reports/{id}/pdf",
+    "POST /v1/batch",
+    "GET /v1/states/{code}",
+    "GET /v1/usage",
+    "GET /v1/health",
+    "MCP tool: analyze_land",
+    "MCP tool: get_land_quick_score",
+    "MCP tool: get_state_land_profile",
+    "MCP tool: compare_properties",
+    "MCP tool: get_solar_potential"
+  ]
+}

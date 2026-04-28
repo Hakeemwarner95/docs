@@ -1,0 +1,64 @@
+---
+title: "AcreLens: land intelligence API for US properties"
+sidebarTitle: "Introduction"
+description: "AcreLens is a B2B API that analyzes US property addresses and returns structured scores, confidence ratings, citations, and a PDF."
+keywords: ["land intelligence", "property analysis", "API", "off-grid", "rural", "real estate data"]
+---
+
+AcreLens is a B2B land intelligence API. You send a US property address and an analysis mode; LandScout pulls data from NREL, USGS, FEMA, and county regulation sources, synthesizes it with AI, and returns a structured report. The API is designed for developers and AI agents who need property intelligence without building their own data pipeline.
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="bolt" href="/quickstart">
+    Make your first API call in under 5 minutes
+  </Card>
+
+  <Card title="Authentication" icon="key" href="/authentication">
+    Get your API key and authenticate requests
+  </Card>
+
+  <Card title="Analysis modes" icon="map" href="/concepts/analysis-modes">
+    Understand the four property analysis modes
+  </Card>
+
+  <Card title="API reference" icon="code" href="/api/analyze">
+    Full endpoint reference with request and response examples
+  </Card>
+</CardGroup>
+
+## Analysis modes
+
+Every request requires a `mode` parameter. AcreLens supports four modes, each scoring different property attributes:
+
+| Mode | Key | Question it answers |
+| --- | --- | --- |
+| Off-Grid | `off_grid` | Can you live here without grid utilities? |
+| Rural Residential | `rural_residential` | Can you build a conventional home here? |
+| Recreational | `recreational` | Is this suitable for hunting, fishing, or camping? |
+| Investment | `investment` | How does this parcel compare as a financial investment? |
+
+See [Analysis modes](/concepts/analysis-modes) for scoring weights, sub-score keys, and mode-specific caveats.
+
+## What a report contains
+
+Every completed report includes:
+
+- **Overall score** — a 0–100 suitability score for the selected mode
+- **Sub-scores** — per-category scores (keys vary by mode)
+- **Confidence ratings** — `high`, `medium`, or `low` per category
+- **Narrative summary** — an AI-generated explanation of the scores
+- **Citations** — structured source list with URLs, domains, and access dates
+- **PDF** — a downloadable report available via a 60-minute signed URL
+
+## How the API works
+
+Report generation is asynchronous. When you `POST /v1/analyze`, the API returns a `202 Accepted` response immediately with a `report_id` and a `poll_url`. AcreLens generates the report in the background — typically in 60–120 seconds — then delivers the result to your webhook endpoint or makes it available for polling via `GET /v1/reports/{id}`.
+
+For production workloads, use webhooks to avoid polling overhead. See the [Webhooks guide](/guides/webhooks).
+
+## MCP server
+
+AcreLens exposes an MCP server at `mcp.landscout.io` so AI agents can call land analysis as a tool. The MCP server is a thin proxy over the same REST API, so your quota and API keys apply equally to both. See [MCP server](/guides/mcp-server) for setup instructions.
+
+## Important note
+
+LandScout provides **informational analysis only** — not purchase recommendations or professional advice. All report output is a suitability assessment based on available data. Always consult local professionals before making land acquisition decisions.

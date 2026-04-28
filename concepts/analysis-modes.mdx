@@ -1,0 +1,115 @@
+---
+title: "LandScout analysis modes: off-grid to investment"
+sidebarTitle: "Analysis Modes"
+description: "Every LandScout request requires a mode parameter. Learn which of the four modes fits your use case and which sub-scores each returns."
+keywords: ["analysis modes", "off_grid", "rural_residential", "recreational", "investment", "mode parameter", "sub-scores"]
+---
+
+Every request to LandScout requires a `mode` parameter. The mode tells LandScout which question to answer about the property — the data pipeline is the same for all four modes, but the AI scoring weights, analytical prompts, and sub-score dimensions differ. Choose the mode that matches what your users are trying to decide.
+
+## The four modes
+
+<Tabs>
+  <Tab title="off_grid">
+    **"Can you live here without grid utilities?"**
+
+    Off-grid mode scores a property's suitability for self-sufficient living — no power grid connection, no municipal water, no sewer hookup. It focuses on energy production potential, independent water sourcing, and local regulatory tolerance for alternative systems.
+
+    | Sub-score | What it measures |
+    |-----------|-----------------|
+    | `solar` | Solar energy production potential (kWh/year from NREL PVWatts) |
+    | `water` | Well, rainwater catchment, or spring viability |
+    | `septic` | Soil conditions and septic permit feasibility |
+    | `building_codes` | County flexibility for non-standard construction |
+    | `access` | Year-round road access and distance to services |
+  </Tab>
+  <Tab title="rural_residential">
+    **"Can you build a normal home here?"**
+
+    Rural residential mode scores a property's readiness for conventional single-family construction. It weighs utility availability, site preparation costs, environmental risk, and permit complexity.
+
+    | Sub-score | What it measures |
+    |-----------|-----------------|
+    | `utilities` | Proximity to grid power, water, and sewer hookups |
+    | `build_cost` | Site prep and construction cost signals |
+    | `flood_fire_risk` | FEMA flood zone and wildfire risk assessment |
+    | `permit_complexity` | County permit process difficulty and typical timelines |
+    | `access` | Road quality and driveway feasibility |
+  </Tab>
+  <Tab title="recreational">
+    **"Is this good for hunting, fishing, or camping?"**
+
+    Recreational mode scores a property's value for outdoor leisure use. It emphasizes terrain, natural features, cover, and seasonal usability rather than utilities or zoning.
+
+    | Sub-score | What it measures |
+    |-----------|-----------------|
+    | `terrain` | Topographic variety and land features |
+    | `water_features` | Streams, ponds, lakes, or water access on or near the parcel |
+    | `cover` | Timber density and wildlife habitat quality |
+    | `neighboring_use` | Proximity to public lands, national forests, or conservation areas |
+    | `seasonal_access` | Year-round vs. seasonal road access |
+  </Tab>
+  <Tab title="investment">
+    **"Is this a good financial investment?"**
+
+    Investment mode scores a property's financial upside based on zoning flexibility, qualitative comparable sales, price-per-acre context, holding costs, and development potential.
+
+    | Sub-score | What it measures |
+    |-----------|-----------------|
+    | `zoning` | Zoning flexibility and upzoning potential |
+    | `comps` | Qualitative comparable sales from AI research |
+    | `price_per_acre` | Price-per-acre context for the county and region |
+    | `holding_cost` | Property tax signals and carrying cost estimates |
+    | `development_potential` | Subdivision feasibility and highest-and-best-use indicators |
+
+    <Warning>
+      Investment mode uses qualitative comparable sales sourced from AI research, not structured financial comps from an MLS or data provider. The scores reflect relative indicators only. Do not rely on investment mode output for purchase decisions — consult a licensed local real estate professional before buying or selling any property.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Sub-score keys by mode
+
+The `scores.sub_scores` object in a completed report contains different keys depending on the mode you requested. Use this table as a quick reference when parsing report responses.
+
+| Sub-score key | `off_grid` | `rural_residential` | `recreational` | `investment` |
+|---------------|:----------:|:-------------------:|:--------------:|:------------:|
+| `solar` | ✓ | | | |
+| `water` | ✓ | | | |
+| `septic` | ✓ | | | |
+| `building_codes` | ✓ | | | |
+| `utilities` | | ✓ | | |
+| `build_cost` | | ✓ | | |
+| `flood_fire_risk` | | ✓ | | |
+| `permit_complexity` | | ✓ | | |
+| `terrain` | | | ✓ | |
+| `water_features` | | | ✓ | |
+| `cover` | | | ✓ | |
+| `neighboring_use` | | | ✓ | |
+| `seasonal_access` | | | ✓ | |
+| `zoning` | | | | ✓ |
+| `comps` | | | | ✓ |
+| `price_per_acre` | | | | ✓ |
+| `holding_cost` | | | | ✓ |
+| `development_potential` | | | | ✓ |
+| `access` | ✓ | ✓ | | |
+
+## Mixing modes in batch requests
+
+You can submit properties with different modes in a single `POST /v1/batch` request. Each item in the batch carries its own `mode` field, so you can screen a set of parcels across multiple use cases in one call.
+
+```json
+{
+  "items": [
+    { "address": "123 Cabin Rd", "state": "NM", "mode": "off_grid" },
+    { "address": "456 River Ln", "state": "CO", "mode": "recreational" },
+    { "address": "789 County Rd 12", "state": "TX", "mode": "investment" }
+  ]
+}
+```
+
+<Note>
+  Each property in a batch consumes one report from your quota regardless of mode. See [quota and billing](/concepts/quota-and-billing) for how batch quota is checked atomically.
+</Note>
+
+For the full request schema and response shape, see the [POST /v1/analyze reference](/api/analyze).

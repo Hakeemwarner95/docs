@@ -1,0 +1,58 @@
+---
+title: "GET /v1/reports/{id}/pdf — download the report PDF"
+sidebarTitle: "GET /v1/reports/{id}/pdf"
+description: "Returns a signed download URL for the report PDF. The URL is valid for 60 minutes. Request a fresh URL each time — do not cache signed URLs."
+keywords: ["PDF", "download", "signed URL", "report PDF", "expires_at"]
+---
+
+Get a time-limited signed URL to download the PDF version of a completed report. The URL is valid for 60 minutes — request a fresh URL each time you need to download or share the PDF. This endpoint does not consume quota.
+
+## Request
+
+<CodeGroup>
+
+```bash curl
+curl https://api.landscout.io/v1/reports/rpt_01HY2Z.../pdf \
+  -H "Authorization: Bearer ls_live_abc123defg456hijklmnopqrstuvwxyz78"
+```
+
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  Report ID, prefixed with `rpt_`. The report must belong to your account and have a `status` of `completed`.
+</ParamField>
+
+## Response
+
+### 200 OK
+
+<ResponseField name="download_url" type="string">
+  Signed URL for direct PDF download. Valid for 60 minutes from the time this response was generated. Pass this URL directly to a browser, `curl`, or your HTTP client — no `Authorization` header is required.
+</ResponseField>
+
+<ResponseField name="expires_at" type="string">
+  ISO 8601 timestamp (UTC) when the signed URL expires.
+</ResponseField>
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "download_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf?X-Signature=...",
+  "expires_at": "2026-06-15T15:33:45Z"
+}
+```
+
+### Error responses
+
+| Status | `error.code` | When it occurs |
+|--------|--------------|----------------|
+| `401` | `unauthorized` | Missing, invalid, or revoked API key |
+| `403` | `forbidden` | Account is suspended, canceled, or past due |
+| `404` | `not_found` | Report ID does not exist, or belongs to a different account |
+| `409` | `not_ready` | Report is still processing — poll `GET /v1/reports/{id}` until `status` is `"completed"` before requesting the PDF |
+
+<Tip>
+Store the `expires_at` value from the response. Before presenting the PDF to a user or fetching it from storage, check whether the URL has expired and request a fresh one if needed. Do not cache signed URLs for more than 60 minutes.
+</Tip>

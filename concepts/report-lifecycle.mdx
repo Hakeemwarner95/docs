@@ -1,0 +1,162 @@
+---
+title: "LandScout report lifecycle: from request to results"
+sidebarTitle: "Report Lifecycle"
+description: "LandScout generates reports asynchronously. Learn how status transitions work, how to receive results, and what to do when a report fails."
+keywords: ["report lifecycle", "async", "PENDING", "PROCESSING", "COMPLETED", "FAILED", "webhook", "polling", "status"]
+---
+
+Report generation in LandScout is asynchronous. When you call `POST /v1/analyze`, the API accepts your request and returns a `202 Accepted` immediately — the report is not yet built. LandScout then runs the analysis pipeline in the background, which typically completes in 60–120 seconds. You receive the finished report either through a webhook or by polling.
+
+## Status lifecycle
+
+Every report moves through the following states:
+
+```
+PENDING → PROCESSING → COMPLETED
+                     ↘ FAILED
+```
+
+| Status | Meaning |
+|--------|---------|
+| `PENDING` | Request accepted, pipeline queued |
+| `PROCESSING` | Analysis pipeline actively running |
+| `COMPLETED` | Report is ready and all fields are populated |
+| `FAILED` | Pipeline encountered a permanent error (see [failures](#failures)) |
+
+The `202` response from `POST /v1/analyze` includes an `estimated_completion_seconds` field. In practice, most reports complete in **60–120 seconds**.
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "processing",
+  "mode": "off_grid",
+  "estimated_completion_seconds": 90,
+  "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY2Z..."
+}
+```
+
+## Receiving results
+
+You have two options for retrieving a completed report.
+
+<Tabs>
+  <Tab title="Webhooks (recommended)">
+    Configure a webhook URL on your account or pass a `webhook_url` in the request body. When the report finishes, LandScout sends a `POST` request to your endpoint with the full completed report as the body.
+
+    Webhooks are the preferred approach for production integrations — they eliminate polling overhead and deliver results as soon as they are ready.
+
+    Every webhook request includes:
+    - `X-LandScout-Event`: the event type (`report.completed`, `report.failed`, or `batch.completed`)
+    - `X-LandScout-Signature`: an HMAC-SHA256 signature you use to verify the payload
+
+    See the [webhooks guide](/guides/webhooks) for signature verification and endpoint setup.
+  </Tab>
+  <Tab title="Polling">
+    Call `GET /v1/reports/{id}` repeatedly until `status` is `"completed"` or `"failed"`. The endpoint returns the current state of the report on every request.
+
+    ```bash
+    curl https://api.landscout.io/v1/reports/rpt_01HY2Z... \
+      -H "Authorization: Bearer ls_live_..."
+    ```
+
+    Poll no more frequently than once every 5 seconds. Polling `GET /v1/reports/{id}` is free and does not consume quota.
+  </Tab>
+</Tabs>
+
+## Completed report shape
+
+A completed report includes scores, confidence ratings, a narrative summary, source citations, and a PDF download URL.
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "completed",
+  "mode": "off_grid",
+  "property": {
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "county": "Taos",
+    "lat": 36.8,
+    "lng": -105.5,
+    "acreage": 5.2
+  },
+  "scores": {
+    "overall": 78,
+    "sub_scores": {
+      "solar": 92,
+      "water": 65,
+      "septic": 71,
+      "building_codes": 84,
+      "access": 88
+    }
+  },
+  "confidence": {
+    "solar": "high",
+    "water": "medium",
+    "septic": "high",
+    "building_codes": "medium",
+    "access": "high"
+  },
+  "summary": "This 5.2-acre parcel in Taos County scores well for off-grid use...",
+  "sources": [
+    {
+      "url": "https://developer.nrel.gov/docs/solar/pvwatts/v8/",
+      "title": "NREL PVWatts API V8",
+      "access_date": "2026-04-25",
+      "confidence": "high",
+      "domain": "nrel.gov",
+      "type": "data_api"
+    }
+  ],
+  "pdf_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf",
+  "metadata": { "listing_id": "LW-98765" },
+  "generated_at": "2026-06-15T14:33:45Z"
+}
+```
+
+## Source citations
+
+Every completed report includes a `sources` array. Each entry identifies where LandScout obtained the data behind a specific score or claim.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | string | Full URL of the source |
+| `title` | string | Descriptive title of the source |
+| `access_date` | string | ISO 8601 date the source was queried |
+| `confidence` | `"high"` \| `"medium"` \| `"low"` | `.gov` domains → high; `.edu` and authoritative sources → medium; others → low |
+| `domain` | string | Extracted domain (e.g., `usgs.gov`) |
+| `type` | string | `"government"`, `"academic"`, `"news"`, `"community"`, `"data_api"`, or `"other"` |
+
+Sources come from three origins: structured data APIs (NREL, USGS, FEMA), county and government websites discovered during regulation research, and citations returned by the AI analysis itself.
+
+## Failures
+
+If the pipeline encounters a permanent error, the report status becomes `"failed"` and the `failed_reason` field describes what went wrong.
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "failed",
+  "failed_reason": "Address could not be geocoded. Check that the address and state are correct."
+}
+```
+
+Transient failures — such as a temporary AI provider outage — are retried automatically with exponential backoff before a report is marked failed. If your webhook receives a `report.failed` event, the failure is permanent and the report will not retry.
+
+<Note>
+  Failed reports do not consume quota — the report credit is returned to your account if the failure occurs before analysis begins.
+</Note>
+
+## Idempotency
+
+To avoid creating duplicate reports when retrying a failed request, include an `Idempotency-Key` header with a unique UUID. If LandScout receives the same key with the same request body within 24 hours, it returns the original `report_id` without creating a new report or decrementing your quota.
+
+```bash
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_..." \
+  -H "Idempotency-Key: 7f8a9e2b-3c1d-4e5f-a6b7-8c9d0e1f2a3b" \
+  -H "Content-Type: application/json" \
+  -d '{ "address": "123 Cabin Rd", "state": "NM", "mode": "off_grid" }'
+```
+
+See the [idempotency guide](/guides/idempotency) for full details and edge cases.

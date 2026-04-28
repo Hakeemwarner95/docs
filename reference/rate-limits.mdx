@@ -1,0 +1,133 @@
+---
+title: "Rate limits and headers in the LandScout API"
+sidebarTitle: "Rate Limits"
+description: "LandScout enforces per-second rate limits per API key. Learn about per-tier limits, X-RateLimit headers, and how to handle 429 responses."
+keywords: ["rate limits", "429", "X-RateLimit", "Retry-After", "throttling", "backoff"]
+---
+
+LandScout enforces a per-second rate limit on every API key using a sliding window algorithm. When your application exceeds the limit for your tier, the API returns a `429` response with a `Retry-After` header telling you exactly how long to wait. Rate limit headers are present on every response — not just errors — so you can monitor your usage proactively.
+
+## Rate limits by tier
+
+| Tier | Requests per second |
+|------|---------------------|
+| Developer | 5 req/sec |
+| Starter | 10 req/sec |
+| Growth | 20 req/sec |
+| Scale | 50 req/sec |
+| Enterprise | Custom |
+
+## Rate limit response headers
+
+Every response from the LandScout API includes the following headers, regardless of whether the request succeeded or was rate-limited.
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Your tier's rate limit in requests per second |
+| `X-RateLimit-Remaining` | Requests remaining in the current window |
+| `X-RateLimit-Reset` | Unix timestamp (UTC) when the current window resets |
+| `Retry-After` | Seconds to wait before retrying (only present on `429` responses) |
+
+## Handling 429 responses
+
+When you exceed your rate limit, the API returns a `429 Too Many Requests` with `error.code` set to `rate_limit_exceeded`.
+
+```json
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded. Retry after 1 second.",
+    "request_id": "req_01HY2Z...",
+    "retriable": true,
+    "docs_url": "https://docs.landscout.io/reference/rate-limits"
+  }
+}
+```
+
+Read the `Retry-After` header from the response and wait that many seconds before sending the next request.
+
+## Best practices
+
+**Read `Retry-After` before retrying.** The header gives you the exact number of seconds to wait. Retrying sooner wastes quota and keeps triggering 429s.
+
+**Use exponential backoff with jitter.** For resilience against transient spikes, implement backoff even when `Retry-After` is short. Adding random jitter prevents multiple clients from retrying in lockstep.
+
+**Use `POST /v1/batch` for bulk workloads.** Submitting 50 properties as a single batch request is far more efficient than 50 sequential `POST /v1/analyze` calls — and consumes only a fraction of your rate limit budget.
+
+**Add an `Idempotency-Key` when retrying.** Including an `Idempotency-Key` header on every `POST /v1/analyze` or `POST /v1/batch` request means retrying a failed request never creates a duplicate report or double-charges your quota.
+
+## Code examples
+
+<CodeGroup>
+
+```javascript retry.js
+async function analyzeWithRetry(payload, maxRetries = 5) {
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    const response = await fetch("https://api.landscout.io/v1/analyze", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.LANDSCOUT_API_KEY}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": payload.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    const retryAfter = parseInt(response.headers.get("Retry-After") ?? "1", 10);
+    const jitter = Math.random() * 500; // up to 500 ms of jitter
+    const delay = retryAfter * 1000 * Math.pow(2, attempt) + jitter;
+
+    console.warn(`Rate limited. Retrying in ${Math.round(delay)}ms (attempt ${attempt + 1})`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    attempt++;
+  }
+
+  throw new Error("Max retries exceeded");
+}
+```
+
+```python retry.py
+import os
+import time
+import random
+import requests
+
+def analyze_with_retry(payload: dict, max_retries: int = 5) -> requests.Response:
+    attempt = 0
+
+    while attempt < max_retries:
+        response = requests.post(
+            "https://api.landscout.io/v1/analyze",
+            headers={
+                "Authorization": f"Bearer {os.environ['LANDSCOUT_API_KEY']}",
+                "Content-Type": "application/json",
+                "Idempotency-Key": payload["idempotency_key"],
+            },
+            json=payload,
+        )
+
+        if response.status_code != 429:
+            return response
+
+        retry_after = int(response.headers.get("Retry-After", 1))
+        jitter = random.uniform(0, 0.5)  # up to 500 ms of jitter
+        delay = retry_after * (2 ** attempt) + jitter
+
+        print(f"Rate limited. Retrying in {delay:.2f}s (attempt {attempt + 1})")
+        time.sleep(delay)
+        attempt += 1
+
+    raise RuntimeError("Max retries exceeded")
+```
+
+</CodeGroup>
+
+<Note>
+Rate limits and quota are separate controls. Rate limits govern how many requests you can make per second. Quota governs how many reports you can generate per billing period. Exceeding your quota returns `error.code: "quota_exceeded"` — not `rate_limit_exceeded`. See the [errors reference](/reference/errors) for the full distinction.
+</Note>

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "AcreLens",
+  "theme": "luma",
+  "colors": {
+    "primary": "#2D6A4F",
+    "light": "#52B788",
+    "dark": "#1B4332"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/Hakeemwarner95/offgrid-reports"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "authentication"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/analysis-modes",
+              "concepts/report-lifecycle",
+              "concepts/quota-and-billing"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/webhooks",
+              "guides/idempotency",
+              "guides/batch-analysis",
+              "guides/mcp-server"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/rate-limits",
+              "reference/errors",
+              "reference/pricing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Reports",
+            "pages": [
+              "api/analyze",
+              "api/get-report",
+              "api/get-pdf",
+              "api/batch"
+            ]
+          },
+          {
+            "group": "Data & Usage",
+            "pages": [
+              "api/states",
+              "api/usage",
+              "api/health"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

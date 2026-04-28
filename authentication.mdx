@@ -1,0 +1,73 @@
+---
+title: "Authenticate requests to the LandScout API"
+sidebarTitle: "Authentication"
+description: "Pass your API key as a Bearer token. Understand key formats, test vs. live environments, and what each auth error means."
+keywords: ["authentication", "API key", "Bearer token", "authorization", "security"]
+---
+
+LandScout uses API key authentication. Every request to the API (except `GET /v1/health`) must include your API key as a Bearer token in the `Authorization` header.
+
+## API key format
+
+LandScout keys follow this format:
+
+| Type | Format | Use |
+|------|--------|-----|
+| Live key | `ls_live_` + 32 characters | Production requests — consumes quota |
+| Test key | `ls_test_` + 32 characters | Development and testing — does not consume quota |
+
+Keys are shown **exactly once** when created. Copy your key immediately and store it securely — LandScout does not store the full key and cannot show it again.
+
+## Passing your API key
+
+Include your key in the `Authorization` header on every request:
+
+```bash
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"address": "123 Cabin Rd", "state": "NM", "mode": "off_grid"}'
+```
+
+Do not include the key in the URL or request body.
+
+## Test vs. live environments
+
+Use your **test key** during development. Test key requests go through the same pipeline as live requests but do not count against your monthly quota.
+
+Switch to your **live key** when you are ready for production traffic. Live requests consume quota and appear in your usage dashboard.
+
+## Managing API keys
+
+You can create and revoke keys from the [LandScout dashboard](https://landscout.io/dashboard):
+
+- **Create a new key** — go to **API Keys** and click **Create key**. The full key is shown once on creation.
+- **Revoke a key** — click **Revoke** next to any key you no longer need. Revoked keys are rejected immediately.
+
+You can have multiple active keys at the same time — for example, one per service or environment.
+
+## Authentication errors
+
+| Error code | HTTP status | Meaning |
+|---|---|---|
+| `unauthorized` | 401 | The key is missing, malformed, or revoked |
+| `forbidden` | 403 | Your account is suspended, canceled, or past due |
+| `email_not_verified` | 403 | Your account email has not been verified |
+
+All error responses include an `error.request_id` field. Include this ID when contacting support.
+
+```json
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "API key has been revoked",
+    "request_id": "a3f9e2b1-...",
+    "retriable": false,
+    "docs_url": "https://docs.landscout.io/errors/unauthorized"
+  }
+}
+```
+
+<Tip>
+  If you accidentally expose an API key — for example, in a public repository or log file — revoke it immediately from the dashboard and create a replacement. Revocation takes effect on the next request.
+</Tip>

@@ -1,0 +1,142 @@
+---
+title: "POST /v1/analyze — generate a land analysis report"
+sidebarTitle: "POST /v1/analyze"
+description: "Async land analysis endpoint. Submit an address and mode, receive a 202 immediately with a report_id and poll_url. Report delivers in 60–120 seconds."
+keywords: ["analyze", "land analysis", "report", "off-grid", "async", "202", "webhook"]
+---
+
+This endpoint generates a land analysis report for a US property. The request is async — you receive a `202` immediately and the report is delivered via webhook or polling when complete (60–120 seconds). One call consumes one report from your monthly quota.
+
+**Base URL:** `https://api.landscout.io`
+
+**Authentication:** `Authorization: Bearer {your_api_key}`
+
+## Request
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_abc123defg456hijklmnopqrstuvwxyz78" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 7f8a9e2b-3c4d-5e6f-7a8b-9c0d1e2f3a4b" \
+  -d '{
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "mode": "off_grid",
+    "county": "Taos",
+    "acreage": 5.2,
+    "webhook_url": "https://myapp.example.com/webhooks/landscout",
+    "metadata": {
+      "listing_id": "LW-98765"
+    }
+  }'
+```
+
+</CodeGroup>
+
+### Body parameters
+
+<ParamField body="address" type="string" required>
+  Full street address or a `"lat,lng"` coordinate pair (e.g., `"36.8,-105.5"`).
+</ParamField>
+
+<ParamField body="state" type="string" required>
+  Two-letter US state code (e.g., `"NM"`). Must be a valid US state.
+</ParamField>
+
+<ParamField body="mode" type="string" required>
+  Analysis mode. One of: `off_grid`, `rural_residential`, `recreational`, `investment`. Determines which sub-scores and scoring weights are applied.
+</ParamField>
+
+<ParamField body="county" type="string">
+  County name (e.g., `"Taos"`). Recommended — LandScout uses this to look up local building codes and zoning regulations. Without it, county-level research may be less accurate.
+</ParamField>
+
+<ParamField body="acreage" type="number">
+  Total property acreage. Used to calibrate septic, solar, and access scores.
+</ParamField>
+
+<ParamField body="lat" type="number">
+  Latitude of the property. If provided together with `lng`, LandScout skips geocoding and uses these coordinates directly.
+</ParamField>
+
+<ParamField body="lng" type="number">
+  Longitude of the property. If provided together with `lat`, LandScout skips geocoding and uses these coordinates directly.
+</ParamField>
+
+<ParamField body="webhook_url" type="string">
+  URL to receive the completed report as a POST payload. Overrides the webhook URL on your account for this request.
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Up to 10 arbitrary key-value pairs (string values only). LandScout stores these and returns them unchanged in the completed report response — useful for linking reports to your internal records.
+</ParamField>
+
+## Response
+
+### 202 Accepted
+
+<ResponseField name="report_id" type="string">
+  Unique report identifier, prefixed with `rpt_`. Use this to poll for results or request the PDF.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Always `"processing"` in the `202` response.
+</ResponseField>
+
+<ResponseField name="mode" type="string">
+  The analysis mode you requested.
+</ResponseField>
+
+<ResponseField name="estimated_completion_seconds" type="number">
+  Expected seconds until the report is complete. Typically between 60 and 120 seconds.
+</ResponseField>
+
+<ResponseField name="poll_url" type="string">
+  Full URL to check the report status: `GET /v1/reports/{id}`.
+</ResponseField>
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "processing",
+  "mode": "off_grid",
+  "estimated_completion_seconds": 90,
+  "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY2Z..."
+}
+```
+
+### Error responses
+
+| Status | `error.code` | When it occurs |
+|--------|--------------|----------------|
+| `401` | `unauthorized` | Missing, invalid, or revoked API key |
+| `403` | `forbidden` | Account is suspended, canceled, or past due |
+| `422` | `validation_failed` | Request body is invalid — for example, `mode` is missing or not a recognized value |
+| `429` | `quota_exceeded` | Monthly report quota exhausted |
+| `429` | `rate_limit_exceeded` | Too many requests per second — check `Retry-After` |
+
+**Example 422 — missing mode:**
+
+```json
+{
+  "error": {
+    "code": "validation_failed",
+    "message": "Request validation failed",
+    "fields": [
+      {
+        "field": "mode",
+        "message": "mode must be one of: off_grid, rural_residential, recreational, investment"
+      }
+    ],
+    "request_id": "req_01HY2Z...",
+    "retriable": false,
+    "docs_url": "https://docs.landscout.io/errors/validation_failed"
+  }
+}
+```
+
+<Note>
+Include an `Idempotency-Key` header on every request. If your network request fails before you receive a response, resending the same body with the same `Idempotency-Key` returns the original `report_id` without creating a duplicate report or consuming additional quota.
+</Note>

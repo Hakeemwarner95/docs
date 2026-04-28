@@ -1,0 +1,197 @@
+---
+title: "AcreLens quickstart: your first property report"
+sidebarTitle: "Quick start"
+description: "Sign up for AcreLens, get your API key, submit a property address, and receive a completed land analysis report in under 5 minutes."
+keywords: ["quickstart", "API key", "first request", "land analysis", "getting started"]
+---
+
+This guide walks you through signing up, submitting your first property analysis, and retrieving the completed report. You will make real API calls and see real response shapes at each step.
+
+<Steps>
+  <Step title="Sign up for an account">
+    Go to [acrelens.com/signup](https://acrelens.com/signup) and create your account. After verifying your email, AcreLens generates a live API key and a test API key for you automatically.
+
+    <Warning>
+      Your API keys are displayed **exactly once** immediately after sign-up. Copy them to a secure location before leaving the page — they cannot be retrieved again. If you lose a key, revoke it and create a new one from the dashboard.
+    </Warning>
+  </Step>
+  <Step title="Copy your API key">
+    AcreLens issues two keys on sign-up:
+
+    - **Live key** — `ls_live_` followed by 32 characters. Consumes quota. Use this in production.
+    - **Test key** — `ls_test_` followed by 32 characters. Does not consume quota. Use this during development.
+
+    You will pass your key as a Bearer token in the `Authorization` header on every request.
+  </Step>
+  <Step title="Submit your first property analysis">
+    Send a `POST` request to `/v1/analyze` with the property address, US state code, and analysis mode. Including `county` is recommended — it improves the quality of regulation research.
+
+    ```bash
+    curl -X POST https://api.landscout.io/v1/analyze \
+      -H "Authorization: Bearer ls_live_YOUR_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "address": "123 Cabin Rd",
+        "state": "NM",
+        "mode": "off_grid",
+        "county": "Taos",
+        "acreage": 5.2
+      }'
+    ```
+
+    LandScout accepts the request immediately and returns `202 Accepted`. Report generation happens in the background.
+
+    ```json
+    {
+      "report_id": "rpt_01HY2Z...",
+      "status": "processing",
+      "mode": "off_grid",
+      "estimated_completion_seconds": 90,
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY2Z..."
+    }
+    ```
+
+    Save the `report_id` — you will use it to retrieve the completed report.
+  </Step>
+  <Step title="Poll for results or wait for a webhook">
+    Use the `poll_url` from the previous response (or construct `GET /v1/reports/{id}` yourself) to check report status. The response includes the full report body once the status is `completed`.
+
+    ```bash
+    curl https://api.landscout.io/v1/reports/rpt_01HY2Z... \
+      -H "Authorization: Bearer ls_live_YOUR_API_KEY"
+    ```
+
+    A completed report looks like this:
+
+    ```json
+    {
+      "report_id": "rpt_01HY2Z...",
+      "status": "completed",
+      "mode": "off_grid",
+      "property": {
+        "address": "123 Cabin Rd",
+        "state": "NM",
+        "county": "Taos",
+        "lat": 36.8,
+        "lng": -105.5,
+        "acreage": 5.2
+      },
+      "scores": {
+        "overall": 78,
+        "sub_scores": {
+          "solar": 92,
+          "water": 65,
+          "septic": 71,
+          "building_codes": 84,
+          "access": 88
+        }
+      },
+      "confidence": {
+        "solar": "high",
+        "water": "medium",
+        "septic": "high",
+        "building_codes": "medium",
+        "access": "high"
+      },
+      "summary": "This parcel scores well for off-grid living...",
+      "sources": [
+        {
+          "url": "https://developer.nrel.gov/docs/solar/pvwatts/v8/",
+          "title": "NREL PVWatts API V8",
+          "access_date": "2026-04-25",
+          "confidence": "high",
+          "domain": "developer.nrel.gov",
+          "type": "data_api"
+        }
+      ],
+      "pdf_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf",
+      "generated_at": "2026-06-15T14:33:45Z"
+    }
+    ```
+
+    Sub-score keys vary by mode. For `off_grid`: `solar`, `water`, `septic`, `building_codes`, `access`. See [Analysis modes](/concepts/analysis-modes) for the full list.
+  </Step>
+  <Step title="Download the PDF">
+    Call `GET /v1/reports/{id}/pdf` to get a fresh signed download URL. The URL is valid for 60 minutes.
+
+    ```bash
+    curl https://api.landscout.io/v1/reports/rpt_01HY2Z.../pdf \
+      -H "Authorization: Bearer ls_live_YOUR_API_KEY"
+    ```
+
+    ```json
+    {
+      "report_id": "rpt_01HY2Z...",
+      "download_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf?token=...",
+      "expires_at": "2026-06-15T15:33:45Z"
+    }
+    ```
+
+    Call this endpoint again to get a new signed URL after the previous one expires.
+  </Step>
+</Steps>
+
+<Note>
+  Report generation takes 60–120 seconds. Use webhooks for production workloads — see the [Webhooks guide](/guides/webhooks).
+</Note>
+
+## The same request in multiple languages
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "mode": "off_grid",
+    "county": "Taos",
+    "acreage": 5.2
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch("https://api.landscout.io/v1/analyze", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ls_live_YOUR_API_KEY",
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    address: "123 Cabin Rd",
+    state: "NM",
+    mode: "off_grid",
+    county: "Taos",
+    acreage: 5.2,
+  }),
+});
+
+const data = await response.json();
+console.log(data.report_id);  // "rpt_01HY2Z..."
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    "https://api.landscout.io/v1/analyze",
+    headers={
+        "Authorization": "Bearer ls_live_YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    json={
+        "address": "123 Cabin Rd",
+        "state": "NM",
+        "mode": "off_grid",
+        "county": "Taos",
+        "acreage": 5.2,
+    },
+)
+
+data = response.json()
+print(data["report_id"])  # "rpt_01HY2Z..."
+```
+
+</CodeGroup>

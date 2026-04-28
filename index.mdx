@@ -1,0 +1,64 @@
+---
+title: "LandScout documentation"
+description: "LandScout analyzes any US property address and returns structured scores, confidence ratings, data citations, and a PDF — via a simple REST API."
+---
+
+LandScout is a land intelligence API that takes any US property address and analysis mode, then returns a structured report with category scores, confidence ratings, source citations, and a downloadable PDF. Whether you're screening properties for off-grid living, rural construction, recreational use, or investment potential, LandScout gives you the data in seconds — without building your own data pipeline.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="bolt" href="/quickstart">
+    Make your first API call in under 5 minutes
+  </Card>
+  <Card title="Authentication" icon="key" href="/authentication">
+    Get your API key and start making authenticated requests
+  </Card>
+  <Card title="Analysis Modes" icon="map" href="/concepts/analysis-modes">
+    Understand the four property analysis modes
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/analyze">
+    Full endpoint reference with request and response examples
+  </Card>
+</CardGroup>
+
+## How LandScout works
+
+LandScout pulls data from NREL, USGS, FEMA, and county regulation sources, then uses AI to synthesize a structured report. Every report includes:
+
+- **Scores** — an overall score (0–100) plus per-category sub-scores
+- **Confidence ratings** — high, medium, or low per category
+- **Citations** — structured source list with URLs and access dates
+- **PDF** — a downloadable report with a 60-minute signed URL
+
+Report generation is asynchronous and typically completes in 60–120 seconds. You receive results via webhook or by polling the report endpoint.
+
+## Get started
+
+<Steps>
+  <Step title="Sign up">
+    Create your account at [landscout.io/signup](https://landscout.io/signup). Your API keys are shown once immediately after sign-up.
+  </Step>
+  <Step title="Pick a mode">
+    Choose the analysis mode that matches your use case: `off_grid`, `rural_residential`, `recreational`, or `investment`.
+  </Step>
+  <Step title="Submit a property">
+    `POST /v1/analyze` with an address, state, and mode. You receive a `report_id` and a `poll_url` immediately.
+  </Step>
+  <Step title="Receive results">
+    LandScout delivers the completed report to your webhook endpoint, or you can poll `GET /v1/reports/{id}` until the status is `completed`.
+  </Step>
+</Steps>
+
+<CardGroup cols={2}>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Receive results as soon as a report completes
+  </Card>
+  <Card title="Batch Analysis" icon="layer-group" href="/guides/batch-analysis">
+    Analyze up to 50 properties in a single request
+  </Card>
+  <Card title="MCP Server" icon="robot" href="/guides/mcp-server">
+    Use LandScout as a tool inside AI agents
+  </Card>
+  <Card title="Pricing" icon="credit-card" href="/reference/pricing">
+    Compare plans from $99/month
+  </Card>
+</CardGroup>

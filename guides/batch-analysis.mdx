@@ -1,0 +1,153 @@
+---
+title: "Analyze multiple properties in one batch request"
+sidebarTitle: "Batch Analysis"
+description: "Submit 2–50 properties in a single POST /v1/batch request with atomic quota checks, per-item modes, and flexible webhook delivery."
+keywords: ["batch", "POST /v1/batch", "batch analysis", "multiple properties", "atomic quota", "delivery_mode"]
+---
+
+`POST /v1/batch` lets you submit multiple properties in a single request instead of firing individual `POST /v1/analyze` calls. Each property in the batch can specify its own analysis mode. LandScout runs all the analyses in parallel and delivers results to your webhook endpoint as each report completes — or in a single event after the whole batch finishes.
+
+## Batch size limits
+
+The maximum number of properties per batch depends on your plan:
+
+| Plan | Max properties per batch |
+|---|---|
+| Developer | 10 |
+| Starter | 25 |
+| Growth | 50 |
+| Scale | 50 |
+| Enterprise | 50 |
+
+## Atomic quota check
+
+LandScout checks your remaining quota before creating any reports. If your quota is less than the number of items in the batch, the **entire batch is rejected** with a `429 quota_exceeded` error. No partial batches are created — either all items are accepted or none are.
+
+This means you can't accidentally consume part of your quota on a batch that can't complete. If you need to analyze more properties than your remaining quota allows, either reduce the batch size or wait until your quota resets.
+
+## Submit a batch
+
+Send a `POST /v1/batch` with an array of property objects. Each object requires `address`, `state`, and `mode`:
+
+```bash
+curl -X POST https://api.landscout.io/v1/batch \
+  -H "Authorization: Bearer ls_live_abc123..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: a3f8c2e1-7b4d-4f9a-8c2e-1a7b4d4f9a8c" \
+  -d '{
+    "items": [
+      {
+        "address": "123 Cabin Rd",
+        "state": "NM",
+        "county": "Taos",
+        "mode": "off_grid",
+        "acreage": 5.2,
+        "metadata": { "listing_id": "LW-001" }
+      },
+      {
+        "address": "456 Ranch Loop",
+        "state": "TX",
+        "mode": "rural_residential",
+        "acreage": 12.0,
+        "metadata": { "listing_id": "LW-002" }
+      },
+      {
+        "address": "789 Hunting Trail",
+        "state": "CO",
+        "county": "Mesa",
+        "mode": "recreational",
+        "metadata": { "listing_id": "LW-003" }
+      }
+    ],
+    "webhook_url": "https://myapp.example.com/webhooks/landscout",
+    "delivery_mode": "per_item"
+  }'
+```
+
+### Request fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `items` | array | Yes | Array of property objects (2–50 items) |
+| `items[].address` | string | Yes | Full address or `"lat,lng"` |
+| `items[].state` | string | Yes | 2-letter US state code |
+| `items[].mode` | string | Yes | `off_grid`, `rural_residential`, `recreational`, or `investment` |
+| `items[].county` | string | No | Recommended for better regulation research |
+| `items[].acreage` | number | No | Total acreage |
+| `items[].lat` | number | No | Skip geocoding if provided |
+| `items[].lng` | number | No | Skip geocoding if provided |
+| `items[].metadata` | object | No | Up to 10 key-value pairs returned in responses |
+| `webhook_url` | string | No | Override your account default webhook URL |
+| `delivery_mode` | string | No | `per_item` (default) or `batch` |
+
+### 202 response
+
+LandScout returns `202 Accepted` immediately with a `batch_id` and a `report_id` and `poll_url` for each item:
+
+```json
+{
+  "batch_id": "b8f3e1d2-4c5a-6b7c-8d9e-0f1a2b3c4d5e",
+  "status": "processing",
+  "items_count": 3,
+  "items": [
+    {
+      "report_id": "rpt_01HY3B...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY3B..."
+    },
+    {
+      "report_id": "rpt_01HY3C...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY3C..."
+    },
+    {
+      "report_id": "rpt_01HY3D...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY3D..."
+    }
+  ]
+}
+```
+
+You can poll any individual `poll_url` to check that report's status, or wait for webhook delivery.
+
+## Webhook delivery modes
+
+Set `delivery_mode` in your request body to control how LandScout delivers results:
+
+<Tabs>
+  <Tab title="per_item (default)">
+    Each report fires its own `report.completed` (or `report.failed`) webhook as soon as it finishes. Reports in the same batch may complete at different times, so your endpoint receives multiple events over the course of the batch.
+
+    Use `per_item` when you want to process results as they arrive rather than waiting for the whole batch.
+
+    ```json
+    {
+      "properties": [...],
+      "delivery_mode": "per_item"
+    }
+    ```
+  </Tab>
+  <Tab title="batch">
+    A single `batch.completed` webhook fires after **all** reports in the batch have finished (whether completed or failed). The event includes a summary of all results.
+
+    Use `batch` when your downstream workflow needs the full set of results before it can proceed.
+
+    ```json
+    {
+      "properties": [...],
+      "delivery_mode": "batch"
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Idempotency
+
+Batch requests support the `Idempotency-Key` header. Because quota is consumed upfront for the entire batch, idempotency is especially important here — retrying without a key after a network failure will attempt to consume quota a second time.
+
+See [Safe retries with Idempotency-Key](/guides/idempotency) for the full guide.
+
+<Note>
+Include an `Idempotency-Key` on every batch request. If your request times out before you receive a `202`, retry with the same key to safely recover the original response without creating duplicate reports.
+</Note>

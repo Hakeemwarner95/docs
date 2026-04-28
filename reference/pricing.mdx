@@ -1,0 +1,58 @@
+---
+title: "LandScout pricing plans and report costs"
+sidebarTitle: "Pricing"
+description: "LandScout is priced by report volume. Compare the five tiers, per-report rates, overage pricing, and the 14-day free trial — no credit card required."
+keywords: ["pricing", "plans", "tiers", "reports", "quota", "overage", "free trial", "enterprise"]
+---
+
+LandScout is priced by the number of property reports you generate per month. Every tier includes a 14-day free trial with 10 reports on Developer quota — no credit card required. After the trial, your account automatically moves to the tier you selected at sign-up.
+
+## Plans
+
+| Tier | Price/month | Reports/month | Per-report cost | Overage rate |
+|------|-------------|---------------|-----------------|--------------|
+| Developer | $99 | 25 | $3.96 | Hard cap — no overage |
+| Starter | $299 | 100 | $2.99 | $3.50/report |
+| Growth | $799 | 350 | $2.28 | $3.00/report |
+| Scale | $1,999 | 1,000 | $2.00 | $2.50/report |
+| Enterprise | Custom | Custom | $1.50–$2.00 | Custom |
+
+**Annual billing:** pay for 12 months upfront and get 2 months free — an effective discount of approximately 17%.
+
+## Overage
+
+The Developer tier is hard-capped. Once you exhaust your 25 reports, `POST /v1/analyze` returns `429 quota_exceeded` until the next billing period. Upgrade to Starter or above to enable overage.
+
+On Starter, Growth, and Scale tiers, requests continue after you exhaust your included quota. Overage reports are billed at your tier's overage rate and charged at the end of the billing period.
+
+<Note>
+You can check how many reports you have remaining at any time by calling `GET /v1/usage` or reading the `X-Quota-Remaining` header on any API response.
+</Note>
+
+## Free trial
+
+Every new account starts with a 14-day free trial. During the trial you have access to 10 reports on Developer quota with no credit card required. When the trial ends, your account rolls to the plan you chose at sign-up — you are only charged if you added a payment method.
+
+## Enterprise
+
+For custom volume, dedicated support, and SLA options, contact [sales@landscout.io](mailto:sales@landscout.io). Enterprise customers receive per-report rates between $1.50 and $2.00 depending on volume, plus custom overage terms.
+
+## Frequently asked questions
+
+<AccordionGroup>
+  <Accordion title="What counts as one report?">
+    Each property analysis — a single `POST /v1/analyze` call — consumes 1 report from your monthly quota. `GET` requests (`GET /v1/reports/{id}`, `GET /v1/states/{code}`, `GET /v1/usage`) are always free and do not count against quota. MCP quick scores (`get_land_quick_score`) cost 0.25 reports each.
+  </Accordion>
+
+  <Accordion title="Can I change my plan mid-month?">
+    Yes. Upgrades take effect immediately — your quota increases and overage access (if applicable) is available right away. Downgrades take effect at the start of your next billing period; your current quota remains in place until then.
+  </Accordion>
+
+  <Accordion title="What happens when I exceed my quota on Starter and above?">
+    Requests continue normally. Overage reports are billed at your tier's overage rate and appear as a line item on your invoice at the end of the billing period. You can monitor your overage exposure in real time via `GET /v1/usage` or the usage widget in your dashboard.
+  </Accordion>
+
+  <Accordion title="Do batch requests count as multiple reports?">
+    Yes. Each property in a `POST /v1/batch` request consumes 1 report from your quota. A batch of 10 properties costs 10 reports. The quota check is atomic: if you do not have enough reports for the entire batch, none of the reports are created and no quota is consumed.
+  </Accordion>
+</AccordionGroup>

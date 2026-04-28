@@ -1,0 +1,44 @@
+---
+title: "GET /v1/health — check LandScout API status"
+sidebarTitle: "GET /v1/health"
+description: "Public health check endpoint. Returns 200 when the API is healthy and 503 when degraded. No authentication required. Safe for uptime monitors."
+keywords: ["health check", "status", "uptime", "503", "degraded", "monitoring", "no auth"]
+---
+
+Check whether the LandScout API is operational. This endpoint requires no authentication and is suitable for use in monitoring systems, load balancer health checks, or deployment pipelines. It performs lightweight internal probes and returns a simple status object you can act on programmatically.
+
+## Authentication
+
+None required. This endpoint is fully public.
+
+## Request example
+
+```bash
+curl https://api.landscout.io/v1/health
+```
+
+## Responses
+
+### 200 — healthy
+
+The API is fully operational.
+
+```json
+{ "status": "ok", "timestamp": "2026-04-27T12:00:00Z" }
+```
+
+### 503 — degraded
+
+The API is experiencing issues. Requests may fail or return elevated latency.
+
+```json
+{ "status": "degraded", "timestamp": "2026-04-27T12:00:00Z" }
+```
+
+<Tip>
+  If you see repeated `503` responses, check [status.landscout.io](https://status.landscout.io) for the active incident before opening a support ticket.
+</Tip>
+
+<Note>
+  For real-time status, incident history, and uptime metrics, visit [status.landscout.io](https://status.landscout.io). The status page is updated independently of the API and reflects ongoing incidents as they are investigated.
+</Note>

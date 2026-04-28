@@ -1,0 +1,131 @@
+---
+title: "Use LandScout as an AI agent tool via MCP"
+sidebarTitle: "MCP Server"
+description: "Connect Claude Desktop and other MCP-compatible AI agents to mcp.landscout.io to run LandScout land analysis as a native agent tool."
+keywords: ["MCP", "Model Context Protocol", "Claude Desktop", "AI agent", "mcp.landscout.io", "BYOK", "OAuth"]
+---
+
+LandScout exposes a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server at `mcp.landscout.io`. This lets AI agents like Claude call land analysis directly as a tool — no custom integration code required. An agent can run a full property analysis, compare multiple parcels, or check a state's land profile mid-conversation, using the same quota and API key as your REST integration.
+
+## Authentication
+
+LandScout supports two authentication modes for the MCP server:
+
+<Tabs>
+  <Tab title="OAuth (recommended)">
+    Add `mcp.landscout.io` as a connector in Claude Desktop. LandScout handles sign-in and authorization automatically via OAuth. When an agent calls a LandScout tool for the first time, Claude prompts you to authorize the connection. You can sign in to an existing account or create a new one.
+
+    No API key configuration is needed — the OAuth flow provisions credentials automatically.
+  </Tab>
+  <Tab title="BYOK">
+    If you already have a LandScout API key, configure it directly in the connector settings as a Bearer token. LandScout skips the OAuth flow and authenticates using your key on every tool call.
+
+    Use BYOK when you want tool calls billed to an existing account without going through OAuth.
+  </Tab>
+</Tabs>
+
+## Available tools
+
+The MCP server exposes five tools at launch.
+
+### analyze_land
+
+Runs a full land analysis report for a US property. Call this when you need detailed scores, confidence ratings, citations, and a PDF for a specific address.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | Yes | Full street address or `"lat,lng"` |
+| `state` | string | Yes | 2-letter US state code |
+| `mode` | string | Yes | `off_grid`, `rural_residential`, `recreational`, or `investment` |
+| `county` | string | No | Improves regulation research accuracy |
+| `acreage` | number | No | Total acreage of the parcel |
+
+**Quota cost:** 1 report
+
+**Returns:** overall score, per-category sub-scores, confidence ratings, source citations, and a PDF download URL.
+
+---
+
+### get_land_quick_score
+
+Returns a fast screening score without generating a full report. Use this to compare multiple properties before committing to a full analysis.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | Yes | Full street address |
+| `state` | string | Yes | 2-letter US state code |
+| `mode` | string | Yes | `off_grid`, `rural_residential`, `recreational`, or `investment` |
+
+**Quota cost:** 0.25 reports
+
+**Returns:** overall score and per-category sub-scores.
+
+---
+
+### get_state_land_profile
+
+Returns state-level land data across all four analysis modes. Use this to understand a state's general regulatory environment and land characteristics before analyzing specific properties.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `state_code` | string | Yes | 2-letter US state code |
+| `mode` | string | No | Omit to get data for all four modes |
+
+**Quota cost:** free
+
+**Returns:** overall score, sub-scores, summary, and key regulations for the requested mode(s).
+
+---
+
+### compare_properties
+
+Runs a side-by-side comparison of 2–5 properties. Each property is analyzed individually and the results are returned as a comparative report.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `properties` | array | Yes | Array of 2–5 objects, each with `address` and `state` |
+| `mode` | string | Yes | Analysis mode applied to all properties in the comparison |
+
+**Quota cost:** 1 report per property
+
+**Returns:** a comparative report with scores and highlights for all properties.
+
+---
+
+### get_solar_potential
+
+Returns a solar production estimate for a location using NREL PVWatts data.
+
+| Input | Type | Required | Description |
+|---|---|---|---|
+| `address` | string | No* | Full street address (*provide address or lat/lng) |
+| `lat` | number | No* | Latitude |
+| `lng` | number | No* | Longitude |
+| `system_size_kw` | number | No | System size in kilowatts. Defaults to 5 kW. |
+
+**Quota cost:** free (powered by NREL PVWatts — no quota consumed)
+
+**Returns:** annual kWh estimate and a monthly production breakdown.
+
+---
+
+<Note>
+MCP tool calls use the same quota as REST API calls. To monitor your usage, call `GET /v1/usage` or check the **Usage** page in the LandScout dashboard.
+</Note>
+
+## Connect Claude Desktop
+
+<Steps>
+  <Step title="Open Settings in Claude Desktop">
+    Launch Claude Desktop and navigate to **Settings → Connectors**.
+  </Step>
+  <Step title="Add mcp.landscout.io as a connector">
+    Click **Add connector** and enter `mcp.landscout.io` as the server URL.
+  </Step>
+  <Step title="Authorize the connection">
+    Follow the OAuth prompt to sign in to your LandScout account or create a new one. If you prefer BYOK, skip the OAuth prompt and enter your API key as a Bearer token in the connector configuration.
+  </Step>
+  <Step title="Start using LandScout tools">
+    Claude can now call LandScout tools in any conversation. Try asking: *"Analyze 123 Cabin Rd, Taos County NM for off-grid living."*
+  </Step>
+</Steps>

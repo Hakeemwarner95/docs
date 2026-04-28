@@ -1,0 +1,179 @@
+---
+title: "Safe retries with Idempotency-Key in LandScout"
+sidebarTitle: "Idempotency"
+description: "Use the Idempotency-Key header on POST requests to retry safely — no duplicate reports, no double quota consumption, no guesswork."
+keywords: ["idempotency", "Idempotency-Key", "safe retries", "duplicate prevention", "quota", "batch"]
+---
+
+Network failures happen: a connection drops after you send a request, and you don't know whether it reached LandScout. If you retry without an idempotency key, LandScout treats the second request as a new one — creating a duplicate report and decrementing your quota a second time. The `Idempotency-Key` header solves this by letting LandScout recognize a retry and return the original response instead.
+
+## How to use it
+
+Include an `Idempotency-Key` header with a UUID v4 value on any `POST /v1/analyze` or `POST /v1/batch` request:
+
+```bash
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_abc123..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: f47ac10b-58cc-4372-a567-0e02b2c3d479" \
+  -d '{
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "mode": "off_grid"
+  }'
+```
+
+## Behavior
+
+| Scenario | What happens |
+|---|---|
+| Same key + same body | Returns the original response. No new report is created. Quota is not decremented again. |
+| Same key + different body | Returns `409 idempotency_conflict`. The original request is protected. |
+| Same key after 24 hours | The key has expired. LandScout treats the request as new and creates a new report. |
+
+## Retry example
+
+Generate one key per request attempt, store it, and reuse it on every retry for that attempt:
+
+<CodeGroup>
+
+```bash curl
+# First attempt
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_abc123..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: f47ac10b-58cc-4372-a567-0e02b2c3d479" \
+  -d '{
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "mode": "off_grid"
+  }'
+
+# Retry with the same key if the first attempt failed or timed out
+curl -X POST https://api.landscout.io/v1/analyze \
+  -H "Authorization: Bearer ls_live_abc123..." \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: f47ac10b-58cc-4372-a567-0e02b2c3d479" \
+  -d '{
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "mode": "off_grid"
+  }'
+```
+
+```javascript node.js
+import { randomUUID } from 'crypto';
+
+const LANDSCOUT_API_KEY = process.env.LANDSCOUT_API_KEY;
+
+async function analyzeWithRetry(property, maxAttempts = 3) {
+  // Generate one key for this request attempt — reuse it on every retry
+  const idempotencyKey = randomUUID();
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const response = await fetch('https://api.landscout.io/v1/analyze', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${LANDSCOUT_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify(property),
+      });
+
+      if (response.ok) {
+        return await response.json();
+      }
+
+      // 409 means a key conflict — do not retry with this key
+      if (response.status === 409) {
+        throw new Error('Idempotency key conflict: request body changed');
+      }
+
+      // 4xx (other than 429) are not retryable
+      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+        const error = await response.json();
+        throw new Error(`Request failed: ${error.error.code}`);
+      }
+    } catch (err) {
+      if (attempt === maxAttempts) throw err;
+      // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+const result = await analyzeWithRetry({
+  address: '123 Cabin Rd',
+  state: 'NM',
+  mode: 'off_grid',
+});
+console.log('Report ID:', result.report_id);
+```
+
+```python python
+import os
+import time
+import uuid
+
+import httpx
+
+LANDSCOUT_API_KEY = os.environ["LANDSCOUT_API_KEY"]
+
+
+def analyze_with_retry(property_data: dict, max_attempts: int = 3) -> dict:
+    # Generate one key for this request attempt — reuse it on every retry
+    idempotency_key = str(uuid.uuid4())
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = httpx.post(
+                "https://api.landscout.io/v1/analyze",
+                headers={
+                    "Authorization": f"Bearer {LANDSCOUT_API_KEY}",
+                    "Content-Type": "application/json",
+                    "Idempotency-Key": idempotency_key,
+                },
+                json=property_data,
+                timeout=30,
+            )
+
+            if response.is_success:
+                return response.json()
+
+            # 409 means a key conflict — do not retry with this key
+            if response.status_code == 409:
+                raise ValueError("Idempotency key conflict: request body changed")
+
+            # 4xx (other than 429) are not retryable
+            if 400 <= response.status_code < 500 and response.status_code != 429:
+                error = response.json()
+                raise ValueError(f"Request failed: {error['error']['code']}")
+
+        except (httpx.TimeoutException, httpx.ConnectError):
+            pass  # Retry on network errors
+
+        if attempt < max_attempts:
+            time.sleep(attempt)  # Brief back-off before retry
+
+    raise RuntimeError(f"Request failed after {max_attempts} attempts")
+
+
+result = analyze_with_retry(
+    {"address": "123 Cabin Rd", "state": "NM", "mode": "off_grid"}
+)
+print("Report ID:", result["report_id"])
+```
+
+</CodeGroup>
+
+## Best practices
+
+- **Generate a UUID v4 per request attempt.** Do not reuse keys across unrelated requests.
+- **Store the key with your request record.** If your process crashes mid-flight, you need the same key to retry. Persist it before making the request.
+- **Use a new key when you intentionally change the request body.** A different body with the same key returns a `409` error. Generate a fresh UUID whenever the parameters change.
+
+<Note>
+`Idempotency-Key` is recommended on all mutating requests. It is especially important in batch workflows, where quota is consumed upfront for all items in the batch. A failed batch request retried without a key will consume quota twice.
+</Note>

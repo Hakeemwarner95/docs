@@ -1,0 +1,148 @@
+---
+title: "POST /v1/batch — analyze multiple properties at once"
+sidebarTitle: "POST /v1/batch"
+description: "Submit 2–50 properties in one request. Quota is checked atomically — if you don't have enough reports for the full batch, none are created."
+keywords: ["batch", "bulk analysis", "multiple properties", "batch_id", "atomic quota"]
+---
+
+Submit multiple property analyses in a single request. Quota is checked atomically — if you don't have enough reports remaining for the full batch, none are created and your quota is unchanged. Each item in the batch specifies its own `mode`, so a single batch can mix analysis types.
+
+## Request
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://api.landscout.io/v1/batch \
+  -H "Authorization: Bearer ls_live_abc123defg456hijklmnopqrstuvwxyz78" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [
+      {
+        "address": "123 Cabin Rd",
+        "state": "NM",
+        "mode": "off_grid",
+        "county": "Taos",
+        "acreage": 5.2,
+        "metadata": { "listing_id": "LW-98765" }
+      },
+      {
+        "address": "456 Ranch Way",
+        "state": "TX",
+        "mode": "rural_residential",
+        "county": "Presidio",
+        "acreage": 12.0,
+        "metadata": { "listing_id": "LW-88421" }
+      },
+      {
+        "address": "789 Timberline Dr",
+        "state": "MT",
+        "mode": "recreational",
+        "acreage": 40.0,
+        "metadata": { "listing_id": "LW-77312" }
+      }
+    ],
+    "delivery_mode": "per_item",
+    "webhook_url": "https://myapp.example.com/webhooks/landscout"
+  }'
+```
+
+</CodeGroup>
+
+### Body parameters
+
+<ParamField body="items" type="array" required>
+  Array of 2–50 property objects. Each item supports the same fields as `POST /v1/analyze`:
+
+  | Field | Required | Description |
+  |-------|----------|-------------|
+  | `address` | Yes | Full street address or `"lat,lng"` coordinate pair |
+  | `state` | Yes | Two-letter US state code |
+  | `mode` | Yes | One of: `off_grid`, `rural_residential`, `recreational`, `investment` |
+  | `county` | No | County name — recommended for accurate regulation research |
+  | `acreage` | No | Total property acreage |
+  | `lat` | No | Latitude — skips geocoding if provided with `lng` |
+  | `lng` | No | Longitude — skips geocoding if provided with `lat` |
+  | `metadata` | No | Up to 10 key-value pairs returned unchanged in each item's report |
+</ParamField>
+
+<ParamField body="delivery_mode" type="string">
+  Controls how webhook notifications are sent. Defaults to `"per_item"`.
+
+  - `"per_item"` — fires one webhook for each property as it completes. Use this when you want to process results incrementally.
+  - `"batch"` — fires a single webhook after all items in the batch complete. Use this when you need all results before proceeding.
+</ParamField>
+
+<ParamField body="webhook_url" type="string">
+  Webhook URL for this batch. Overrides the webhook URL on your account and any `webhook_url` set on individual items.
+</ParamField>
+
+## Batch size limits
+
+The maximum number of items per batch depends on your subscription tier.
+
+| Tier | Max batch size |
+|------|----------------|
+| Developer | 10 |
+| Starter | 25 |
+| Growth | 50 |
+| Scale | 50 |
+| Enterprise | Custom |
+
+## Response
+
+### 202 Accepted
+
+<ResponseField name="batch_id" type="string">
+  Unique identifier for this batch. All reports in this batch share the same `batch_id`.
+</ResponseField>
+
+<ResponseField name="items" type="array">
+  One entry per submitted property, in the same order as your request.
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `report_id` | string | Unique report ID, prefixed with `rpt_` |
+  | `status` | string | Always `"processing"` in the `202` response |
+  | `poll_url` | string | URL to retrieve this report: `GET /v1/reports/{id}` |
+</ResponseField>
+
+```json
+{
+  "batch_id": "b8f3e1d2-4c5a-6b7c-8d9e-0f1a2b3c4d5e",
+  "status": "processing",
+  "items_count": 3,
+  "items": [
+    {
+      "report_id": "rpt_01HY2Z...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY2Z..."
+    },
+    {
+      "report_id": "rpt_01HY3A...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY3A..."
+    },
+    {
+      "report_id": "rpt_01HY3B...",
+      "status": "processing",
+      "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY3B..."
+    }
+  ],
+  "delivery_mode": "per_item",
+  "estimated_completion_seconds": 120
+}
+```
+
+### Error responses
+
+| Status | `error.code` | When it occurs |
+|--------|--------------|----------------|
+| `401` | `unauthorized` | Missing, invalid, or revoked API key |
+| `403` | `forbidden` | Account is suspended, canceled, or past due |
+| `422` | `validation_failed` | One or more items are invalid — check `error.fields` for details |
+| `429` | `quota_exceeded` | Insufficient quota for the full batch — no reports were created |
+| `429` | `rate_limit_exceeded` | Too many requests per second — check `Retry-After` |
+
+<Warning>
+If your quota is insufficient for the full batch, the API returns `429 quota_exceeded` and creates no reports. Check `GET /v1/usage` to confirm your remaining quota before submitting large batches.
+</Warning>

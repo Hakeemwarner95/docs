@@ -1,0 +1,198 @@
+---
+title: "GET /v1/reports/{id} — retrieve a land report"
+sidebarTitle: "GET /v1/reports/{id}"
+description: "Retrieve a report by ID. Returns current processing status if the report is still running, or the full report object once complete. Free — no quota."
+keywords: ["get report", "poll report", "report status", "completed report", "sub-scores"]
+---
+
+Retrieve a report by its ID. If the report is still processing, you receive a status object with no scores. Once the report is complete, you receive the full report including scores, confidence ratings, a narrative summary, and source citations. Reports belong to your account — other accounts cannot access your reports, and attempting to do so returns a `404`.
+
+This endpoint is free and does not consume quota.
+
+## Request
+
+<CodeGroup>
+
+```bash curl
+curl https://api.landscout.io/v1/reports/rpt_01HY2Z... \
+  -H "Authorization: Bearer ls_live_abc123defg456hijklmnopqrstuvwxyz78"
+```
+
+</CodeGroup>
+
+### Path parameters
+
+<ParamField path="id" type="string" required>
+  The report ID, prefixed with `rpt_`. Returned in the `202` response from `POST /v1/analyze` and from `POST /v1/batch`.
+</ParamField>
+
+## Response
+
+### 200 — processing
+
+When the report is still generating, the response contains only the current status.
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "processing",
+  "mode": "off_grid",
+  "created_at": "2026-04-25T10:00:00Z",
+  "poll_url": "https://api.landscout.io/v1/reports/rpt_01HY2Z..."
+}
+```
+
+### 200 — completed
+
+When the report is complete, the full report object is returned.
+
+<ResponseField name="report_id" type="string">
+  Unique report identifier, prefixed with `rpt_`.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  `"completed"` when the report is ready.
+</ResponseField>
+
+<ResponseField name="mode" type="string">
+  The analysis mode used: `off_grid`, `rural_residential`, `recreational`, or `investment`.
+</ResponseField>
+
+<ResponseField name="property" type="object">
+  Resolved property details.
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `address` | string | The address as submitted |
+  | `state` | string | Two-letter state code |
+  | `county` | string | County name, if provided or resolved |
+  | `lat` | number | Latitude |
+  | `lng` | number | Longitude |
+  | `acreage` | number | Property acreage |
+</ResponseField>
+
+<ResponseField name="scores" type="object">
+  Suitability scores for this property.
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `overall` | number | Overall suitability score, 0–100 |
+  | `sub_scores` | object | Per-category scores (keys vary by mode — see below) |
+</ResponseField>
+
+<ResponseField name="confidence" type="object">
+  Confidence rating per sub-score. Each key matches a key in `sub_scores`. Possible values: `"high"`, `"medium"`, `"low"`.
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  AI-generated narrative explanation of the scores and key findings for this property.
+</ResponseField>
+
+<ResponseField name="sources" type="array">
+  Structured citations for every data source used in the report. Each source object contains:
+
+  | Field | Type | Description |
+  |-------|------|-------------|
+  | `url` | string | Full source URL |
+  | `title` | string | Descriptive title |
+  | `access_date` | string | ISO 8601 date the source was accessed |
+  | `confidence` | string | `"high"`, `"medium"`, or `"low"` |
+  | `domain` | string | Extracted domain (e.g., `nrel.gov`) |
+  | `type` | string | `"government"`, `"academic"`, `"news"`, `"community"`, `"data_api"`, or `"other"` |
+</ResponseField>
+
+<ResponseField name="pdf_url" type="string">
+  Direct URL to the report PDF. For a fresh signed download URL valid for 60 minutes, use `GET /v1/reports/{id}/pdf` instead.
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  The key-value pairs you submitted with the original request, returned unchanged.
+</ResponseField>
+
+<ResponseField name="generated_at" type="string">
+  ISO 8601 timestamp (UTC) when the report completed.
+</ResponseField>
+
+```json
+{
+  "report_id": "rpt_01HY2Z...",
+  "status": "completed",
+  "mode": "off_grid",
+  "property": {
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "county": "Taos",
+    "lat": 36.8,
+    "lng": -105.5,
+    "acreage": 5.2
+  },
+  "scores": {
+    "overall": 78,
+    "sub_scores": {
+      "solar": 92,
+      "water": 65,
+      "septic": 71,
+      "building_codes": 84,
+      "access": 88
+    }
+  },
+  "confidence": {
+    "solar": "high",
+    "water": "medium",
+    "septic": "high",
+    "building_codes": "medium",
+    "access": "high"
+  },
+  "summary": "This 5.2-acre parcel in Taos County scores well for off-grid living. Exceptional solar irradiance and road access offset moderate water availability concerns. Septic permitting is straightforward under county regulations.",
+  "sources": [
+    {
+      "url": "https://waterservices.usgs.gov/nwis/site/",
+      "title": "USGS Water Services - Monitoring Locations",
+      "access_date": "2026-04-25",
+      "confidence": "high",
+      "domain": "waterservices.usgs.gov",
+      "type": "data_api"
+    },
+    {
+      "url": "https://developer.nrel.gov/docs/solar/pvwatts/v8/",
+      "title": "NREL PVWatts API V8",
+      "access_date": "2026-04-25",
+      "confidence": "high",
+      "domain": "developer.nrel.gov",
+      "type": "data_api"
+    },
+    {
+      "url": "https://www.taoscounty.org/planning/",
+      "title": "Taos County Planning & Zoning",
+      "access_date": "2026-04-25",
+      "confidence": "high",
+      "domain": "taoscounty.org",
+      "type": "government"
+    }
+  ],
+  "pdf_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf",
+  "metadata": {
+    "listing_id": "LW-98765"
+  },
+  "generated_at": "2026-06-15T14:33:45Z"
+}
+```
+
+## Sub-score keys by mode
+
+The keys inside `scores.sub_scores` and `confidence` depend on the `mode` you requested.
+
+| Mode | Sub-score keys |
+|------|----------------|
+| `off_grid` | `solar`, `water`, `septic`, `building_codes`, `access` |
+| `rural_residential` | `utilities`, `build_cost`, `flood_fire_risk`, `permit_complexity`, `access` |
+| `recreational` | `terrain`, `water_features`, `cover`, `neighboring_use`, `seasonal_access` |
+| `investment` | `zoning`, `comps`, `price_per_acre`, `holding_cost`, `development_potential` |
+
+### Error responses
+
+| Status | `error.code` | When it occurs |
+|--------|--------------|----------------|
+| `401` | `unauthorized` | Missing, invalid, or revoked API key |
+| `403` | `forbidden` | Account is suspended, canceled, or past due |
+| `404` | `not_found` | Report ID does not exist, or belongs to a different account |

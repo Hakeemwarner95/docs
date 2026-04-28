@@ -1,0 +1,293 @@
+---
+title: "Receive LandScout reports via webhooks"
+sidebarTitle: "Webhooks"
+description: "Set up a webhook endpoint to receive report.completed, report.failed, and batch.completed events as soon as LandScout finishes processing."
+keywords: ["webhooks", "report.completed", "report.failed", "batch.completed", "HMAC", "signature verification"]
+---
+
+Webhooks are the recommended way to receive report results in production. When a report finishes, LandScout sends an HTTP POST to your endpoint with the full result — no polling required. Polling `GET /v1/reports/{id}` works, but webhooks are more efficient and eliminate the need to manage polling intervals.
+
+## Event types
+
+LandScout sends three event types:
+
+| Event | When it fires |
+|---|---|
+| `report.completed` | A single report finished successfully |
+| `report.failed` | A report could not be completed |
+| `batch.completed` | All reports in a batch finished (when `delivery_mode` is `batch`) |
+
+## Set a webhook URL
+
+You can set a webhook URL per request or as a default for your account.
+
+**Per request:** include `webhook_url` in your `POST /v1/analyze` or `POST /v1/batch` request body:
+
+```json
+{
+  "address": "123 Cabin Rd",
+  "state": "NM",
+  "mode": "off_grid",
+  "webhook_url": "https://myapp.example.com/webhooks/landscout"
+}
+```
+
+**Account default:** set a default webhook URL in the LandScout dashboard under **Settings → Webhooks**. Per-request `webhook_url` values override the account default.
+
+## Webhook payload
+
+LandScout sends a JSON payload via HTTP POST. The shape depends on the event type.
+
+### report.completed
+
+The full report object is delivered:
+
+```json
+{
+  "event": "report.completed",
+  "report_id": "rpt_01HY2Z...",
+  "status": "completed",
+  "mode": "off_grid",
+  "property": {
+    "address": "123 Cabin Rd",
+    "state": "NM",
+    "county": "Taos",
+    "lat": 36.8,
+    "lng": -105.5,
+    "acreage": 5.2
+  },
+  "scores": {
+    "overall": 78,
+    "sub_scores": {
+      "solar": 92,
+      "water": 65,
+      "septic": 71,
+      "building_codes": 84,
+      "access": 88
+    }
+  },
+  "confidence": {
+    "solar": "high",
+    "water": "medium",
+    "septic": "high",
+    "building_codes": "medium",
+    "access": "high"
+  },
+  "summary": "This 5.2-acre parcel in Taos County scores well for off-grid use...",
+  "sources": [
+    {
+      "url": "https://developer.nrel.gov/docs/solar/pvwatts/v8/",
+      "title": "NREL PVWatts API V8",
+      "access_date": "2026-04-25",
+      "confidence": "high",
+      "domain": "developer.nrel.gov",
+      "type": "data_api"
+    }
+  ],
+  "pdf_url": "https://cdn.landscout.io/reports/rpt_01HY2Z....pdf",
+  "metadata": { "listing_id": "LW-98765" },
+  "generated_at": "2026-06-15T14:33:45Z"
+}
+```
+
+### report.failed
+
+```json
+{
+  "event": "report.failed",
+  "report_id": "rpt_01HY2Z...",
+  "status": "failed",
+  "mode": "off_grid",
+  "property": {
+    "address": "123 Cabin Rd",
+    "state": "NM"
+  },
+  "failed_reason": "Unable to geocode the provided address.",
+  "metadata": {},
+  "generated_at": "2026-06-15T14:34:02Z"
+}
+```
+
+## Request headers
+
+LandScout includes two custom headers on every webhook delivery:
+
+| Header | Value |
+|---|---|
+| `X-LandScout-Signature` | HMAC-SHA256 of `{timestamp}.{payload_body}` using your webhook secret |
+| `X-LandScout-Event` | The event type string, e.g. `report.completed` |
+
+## Verify the signature
+
+<Warning>
+Always verify the signature before processing the payload. Skipping verification lets anyone send arbitrary data to your endpoint. Never trust the payload without first confirming the signature.
+</Warning>
+
+<Steps>
+  <Step title="Extract the headers">
+    Read `X-LandScout-Signature` and `X-LandScout-Event` from the incoming request headers. If either header is missing, reject the request with a `400` response.
+  </Step>
+  <Step title="Parse the timestamp">
+    The signature value has the format `t={timestamp},v1={hmac}`. Split on the comma to extract the timestamp and the HMAC digest separately.
+  </Step>
+  <Step title="Recompute the HMAC">
+    Concatenate the timestamp, a literal period (`.`), and the raw request body string: `{timestamp}.{body}`. Compute HMAC-SHA256 of this string using your webhook secret.
+  </Step>
+  <Step title="Compare using constant-time comparison">
+    Compare your computed digest against the `v1` value using a constant-time comparison function. Constant-time comparison prevents timing attacks. Do not use a regular string equality check.
+  </Step>
+  <Step title="Respond">
+    Return `200` if the signatures match. Return `400` if they do not match.
+  </Step>
+</Steps>
+
+## Code examples
+
+<CodeGroup>
+
+```javascript express-webhook.js
+const express = require('express');
+const crypto = require('crypto');
+
+const app = express();
+
+// Read the raw body before JSON parsing
+app.use('/webhooks/landscout', express.raw({ type: 'application/json' }));
+
+app.post('/webhooks/landscout', (req, res) => {
+  const signatureHeader = req.headers['x-landscout-signature'];
+  const eventType = req.headers['x-landscout-event'];
+
+  if (!signatureHeader || !eventType) {
+    return res.status(400).send('Missing required headers');
+  }
+
+  // Parse t=<timestamp>,v1=<hmac>
+  const parts = Object.fromEntries(
+    signatureHeader.split(',').map((p) => p.split('='))
+  );
+  const timestamp = parts['t'];
+  const receivedHmac = parts['v1'];
+
+  if (!timestamp || !receivedHmac) {
+    return res.status(400).send('Malformed signature header');
+  }
+
+  // Recompute HMAC
+  const payload = `${timestamp}.${req.body.toString()}`;
+  const expectedHmac = crypto
+    .createHmac('sha256', process.env.LANDSCOUT_WEBHOOK_SECRET)
+    .update(payload)
+    .digest('hex');
+
+  // Constant-time comparison
+  const signatureBuffer = Buffer.from(receivedHmac, 'hex');
+  const expectedBuffer = Buffer.from(expectedHmac, 'hex');
+
+  if (
+    signatureBuffer.length !== expectedBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)
+  ) {
+    return res.status(400).send('Invalid signature');
+  }
+
+  const event = JSON.parse(req.body.toString());
+
+  switch (event.event) {
+    case 'report.completed':
+      console.log('Report ready:', event.report_id, 'Score:', event.scores.overall);
+      break;
+    case 'report.failed':
+      console.error('Report failed:', event.report_id, event.failed_reason);
+      break;
+    case 'batch.completed':
+      console.log('Batch complete');
+      break;
+  }
+
+  res.status(200).send('OK');
+});
+
+app.listen(3000);
+```
+
+```python flask-webhook.py
+import hashlib
+import hmac
+import json
+import os
+
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+
+WEBHOOK_SECRET = os.environ["LANDSCOUT_WEBHOOK_SECRET"]
+
+
+@app.route("/webhooks/landscout", methods=["POST"])
+def handle_webhook():
+    signature_header = request.headers.get("X-LandScout-Signature")
+    event_type = request.headers.get("X-LandScout-Event")
+
+    if not signature_header or not event_type:
+        abort(400, "Missing required headers")
+
+    # Parse t=<timestamp>,v1=<hmac>
+    parts = dict(p.split("=", 1) for p in signature_header.split(","))
+    timestamp = parts.get("t")
+    received_hmac = parts.get("v1")
+
+    if not timestamp or not received_hmac:
+        abort(400, "Malformed signature header")
+
+    # Recompute HMAC
+    raw_body = request.get_data()
+    payload = f"{timestamp}.{raw_body.decode()}"
+    expected_hmac = hmac.new(
+        WEBHOOK_SECRET.encode(),
+        payload.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    # Constant-time comparison
+    if not hmac.compare_digest(received_hmac, expected_hmac):
+        abort(400, "Invalid signature")
+
+    event = json.loads(raw_body)
+
+    if event["event"] == "report.completed":
+        print(f"Report ready: {event['report_id']} Score: {event['scores']['overall']}")
+    elif event["event"] == "report.failed":
+        print(f"Report failed: {event['report_id']} — {event['failed_reason']}")
+    elif event["event"] == "batch.completed":
+        print("Batch complete")
+
+    return "", 200
+```
+
+</CodeGroup>
+
+## Retry schedule
+
+If your endpoint does not return a `2xx` response, LandScout retries the delivery on the following schedule:
+
+| Attempt | Delay after previous attempt |
+|---|---|
+| 2 | 1 minute |
+| 3 | 5 minutes |
+| 4 | 30 minutes |
+| 5 | 2 hours |
+| 6 | 8 hours |
+| 7 | 24 hours |
+
+LandScout makes up to **7 total delivery attempts**. After the final attempt, the event is not retried again.
+
+## Success and failure rules
+
+- **Success:** any `2xx` response. LandScout does not inspect the body.
+- **Permanent failure (no retry):** a `4xx` response, except `408` (Request Timeout) and `429` (Too Many Requests). If your endpoint returns `400`, `401`, `403`, or `404`, LandScout stops retrying immediately.
+- **Retried:** a `5xx` response, a connection timeout, or a `408`/`429` response.
+
+<Tip>
+Return `200` as soon as you have validated the signature. Move any slow processing — database writes, downstream API calls — to a background queue so your endpoint does not time out.
+</Tip>
